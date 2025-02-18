@@ -11,8 +11,10 @@ You aren't going to use it for anything bad... right?
 
 It runs on Python 3 and it requires a Shodan API key which you can get for free by creating an account at [Shodan's website](https://www.shodan.io/).
 
+This is an improved version that includes a bug fix and introduces a retry mechanism in case of API failures.
+
 #### Installation
-    $ git clone https://github.com/joaovitorbf/nwam.git
+    $ git clone https://github.com/tarowo/nwam.git
     cd ./nwam
     pip install -r requirements.txt
   

